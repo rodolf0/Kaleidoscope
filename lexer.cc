@@ -81,7 +81,19 @@ Token Lexer::Next() {
     return Token(lexem, Token::tokNumber);
   }
 
-  // tokenize commands
+  // tokenize commands/identifiers
+  if (isalpha(last) || last == '_') {
+    do {
+      lexem.append(1, last);
+      last = input.get();
+    } while (isalpha(last) || last == '_');
+
+    if (lexem == "def")
+      return Token(lexem, Token::tokDef);
+    if (lexem == "extern")
+      return Token(lexem, Token::tokExtern);
+    return Token(lexem, Token::tokId);
+  }
 
   // don't know what this is
   return Token("", Token::tokUnknown);
