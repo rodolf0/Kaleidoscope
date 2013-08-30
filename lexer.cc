@@ -1,6 +1,5 @@
 #include <istream>
 #include <string>
-#include <cctype>
 
 using namespace std;
 
@@ -37,8 +36,6 @@ public:
   Lexer(istream &input);
   Token Next();
 };
-
-#include <sstream>
 
 Lexer::Lexer(istream &input) : input(input) {}
 
@@ -96,11 +93,10 @@ Token Lexer::Next() {
   }
 
   // don't know what this is
-  return Token("", Token::tokUnknown);
+  return Token(string(1, last), Token::tokUnknown);
 }
 
 #include <iostream>
-
 int main() {
   Lexer l = Lexer(cin);
 
@@ -108,12 +104,19 @@ int main() {
 
   while ((t = l.Next()).lex_comp != Token::tokEOF) {
     switch (t.lex_comp) {
-      case Token::tokNumber:
-        cout << "Number: ";
-        break;
-      default:
-        cout << "Other: ";
-        break;
+    case Token::tokNumber:
+      cout << "Number: ";
+      break;
+    case Token::tokExtern:
+    case Token::tokDef:
+      cout << "Keyword: ";
+      break;
+    case Token::tokId:
+      cout << "Id: ";
+      break;
+    default:
+      cout << "Other: ";
+      break;
 
     }
     cout << t.token << endl;
