@@ -1,41 +1,10 @@
-#include <istream>
-#include <string>
+#include "lexer.h"
 
 using namespace std;
-
-class Token {
-public:
-  typedef enum lexic_component {
-    // commands
-    tokDef,
-    tokExtern,
-    // primary
-    tokId,
-    tokNumber,
-    // misc
-    tokEOF,
-    tokUnknown
-  } lexic_component;
-
-  string token;
-  lexic_component lex_comp;
-
-  Token();
-  Token(const string &token, lexic_component lex_comp);
-};
 
 Token::Token() : token(""), lex_comp(tokUnknown) {}
 Token::Token(const string &token, lexic_component lex_comp)
     : token(token), lex_comp(lex_comp) {}
-
-class Lexer {
-private:
-  istream &input;
-
-public:
-  Lexer(istream &input);
-  Token Next();
-};
 
 Lexer::Lexer(istream &input) : input(input) {}
 
@@ -96,6 +65,7 @@ Token Lexer::Next() {
   return Token(string(1, last), Token::tokUnknown);
 }
 
+#if 1
 #include <iostream>
 int main() {
   Lexer l = Lexer(cin);
@@ -124,5 +94,6 @@ int main() {
 
   return 0;
 }
+#endif
 
 /* vim: set sw=2 sts=2 : */
