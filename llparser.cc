@@ -90,16 +90,17 @@ static int TokenPrecedence(const Token &token) {
 static ExprAST *ParseBinOpRHS(Lexer &lexer, int ExprPrec, ExprAST *LHS) {
   while (true) {
     int TokenPrec = TokenPrecedence(lexer.Current());
-    // check that binop binds as tightly as the current, else we're done
+    // check that binop binds as tightly as the current op, else we're done
     if (TokenPrec < ExprPrec)
       return LHS;
-    // We
+    // We now know this is a binary operator
     Token BinOp = lexer.Current();
-    lexer.Next(); // eat binop
-                  // parse primary after binary operator
+    lexer.Next(); // eat binop and parse primary
     ExprAST *RHS = ParsePrimary(lexer);
     if (RHS == NULL)
       return NULL;
+    // if BinOp binds less tightly with RHS than the next op (after RHS),
+    // let that next operator take RHS as its LHS
     int NextPrec = TokenPrecedence(lexer.Current());
     if (TokenPrec < NextPrec) {
       RHS = ParseBinOpRHS(lexer, TokenPrec + 1, RHS);
