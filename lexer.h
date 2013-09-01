@@ -7,31 +7,41 @@
 class Token {
 public:
   typedef enum lexic_component {
+    tokEOF = -1,
     // commands
-    tokDef,
-    tokExtern,
+    tokDef = -2,
+    tokExtern = -3,
     // primary
-    tokId,
-    tokNumber,
-    // misc
-    tokEOF,
-    tokUnknown
+    tokId = -4,
+    tokNumber = -5,
+    // explicitly enumerate some used by parser
+    tokSemicolon = ';',
+    tokOParen = '(',
+    tokCParen = ')',
+    tokLT = '<',
+    tokComma = ',',
+    tokPlus = '+',
+    tokMinus = '-',
+    tokMultiply = '*',
+    tokDivide = '/',
   } lexic_component;
 
-  std::string token;
+  std::string lexem;
   lexic_component lex_comp;
 
   Token();
-  Token(const std::string &token, lexic_component lex_comp);
+  Token(const std::string &lexem, lexic_component lex_comp);
 };
 
 class Lexer {
-private:
   std::istream &input;
+  Token current;
+  Token next();
 
 public:
   Lexer(std::istream &input);
-  Token Next();
+  const Token &Next();
+  const Token &Current();
 };
 
 #endif // _LEXER_H_

@@ -2,13 +2,20 @@
 
 using namespace std;
 
-Token::Token() : token(""), lex_comp(tokUnknown) {}
-Token::Token(const string &token, lexic_component lex_comp)
-    : token(token), lex_comp(lex_comp) {}
+Token::Token() {}
+Token::Token(const string &lexem, lexic_component lex_comp)
+    : lexem(lexem), lex_comp(lex_comp) {}
 
-Lexer::Lexer(istream &input) : input(input) {}
+Lexer::Lexer(istream &input)
+  : input(input), current(Token("", Token::tokEOF)) {}
+const Token &Lexer::Current() { return current; }
 
-Token Lexer::Next() {
+const Token &Lexer::Next() {
+  current = next();
+  return current;
+}
+
+Token Lexer::next() {
   string lexem;
   int last = ' ';
   // consume all white space
@@ -43,6 +50,7 @@ Token Lexer::Next() {
       lexem.append(1, last);
       last = input.get();
     } while (isdigit(last));
+    input.putback(last);
 
     return Token(lexem, Token::tokNumber);
   }
@@ -53,6 +61,7 @@ Token Lexer::Next() {
       lexem.append(1, last);
       last = input.get();
     } while (isalpha(last) || last == '_');
+    input.putback(last);
 
     if (lexem == "def")
       return Token(lexem, Token::tokDef);
@@ -62,38 +71,7 @@ Token Lexer::Next() {
   }
 
   // don't know what this is
-  return Token(string(1, last), Token::tokUnknown);
+  return Token(string(1, last), static_cast<Token::lexic_component>(last));
 }
-
-#if 1
-#include <iostream>
-int main() {
-  Lexer l = Lexer(cin);
-
-  Token t;
-
-  while ((t = l.Next()).lex_comp != Token::tokEOF) {
-    switch (t.lex_comp) {
-    case Token::tokNumber:
-      cout << "Number: ";
-      break;
-    case Token::tokExtern:
-    case Token::tokDef:
-      cout << "Keyword: ";
-      break;
-    case Token::tokId:
-      cout << "Id: ";
-      break;
-    default:
-      cout << "Other: ";
-      break;
-
-    }
-    cout << t.token << endl;
-  }
-
-  return 0;
-}
-#endif
 
 /* vim: set sw=2 sts=2 : */
