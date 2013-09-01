@@ -18,7 +18,7 @@ static PrototypeAST *ProtoError(const char *error) {
 
 static ExprAST *ParseExpression(Lexer &lexer);
 
-// primary ::= identifierexpr | numberexpr | parenexpr
+// primary ::= identifierexpr | numberexpr | parenexpr | '-' primary
 static ExprAST *ParsePrimary(Lexer &lexer) {
   switch (lexer.Current().lex_comp) {
   // numberexpr
@@ -38,6 +38,16 @@ static ExprAST *ParsePrimary(Lexer &lexer) {
       return ExprError("Expected ')'");
     lexer.Next(); // eat ')'
     return expr;
+  }
+
+  // '-' primary
+  case Token::tokMinus: {
+    Token Op = lexer.Current();
+    lexer.Next(); // eat '-'
+    ExprAST * expr = ParsePrimary(lexer);
+    if (expr == NULL)
+      return NULL;
+    return new UnaryExprAST(Op.lex_comp, expr);
   }
 
   // identifierexpr
@@ -102,7 +112,7 @@ static ExprAST *ParseBinOpRHS(Lexer &lexer, int ExprPrec, ExprAST *LHS) {
     // if BinOp binds less tightly with RHS than the next op (after RHS),
     // let that next operator take RHS as its LHS
     int NextPrec = TokenPrecedence(lexer.Current());
-    if (TokenPrec < NextPrec) {
+    if (TokenPrec < NextPrec) { // TODO: if TokenPrec == NextPrec check Operator associativity
       RHS = ParseBinOpRHS(lexer, TokenPrec + 1, RHS);
       if (RHS == NULL)
         return NULL;

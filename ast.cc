@@ -10,6 +10,9 @@ string NumberExprAST::String() { return to_string(Val); }
 VariableExprAST::VariableExprAST(const string &name) : Name(name) {}
 string VariableExprAST::String() { return Name; }
 
+UnaryExprAST::UnaryExprAST(Token::lexic_component op, ExprAST *expr)
+    : Op(op), Expr(expr) {}
+
 BinaryExprAST::BinaryExprAST(Token::lexic_component op, ExprAST *lhs,
                              ExprAST *rhs)
     : Op(op), LHS(lhs), RHS(rhs) {}

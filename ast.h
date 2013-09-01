@@ -29,6 +29,15 @@ public:
   std::string String();
 };
 
+// Expressions for a unary operator
+class UnaryExprAST : public ExprAST {
+  Token::lexic_component Op;
+  ExprAST *Expr;
+
+public:
+  UnaryExprAST(Token::lexic_component op, ExprAST *expr);
+};
+
 // Expressions for a binary operator
 class BinaryExprAST : public ExprAST {
   Token::lexic_component Op;
