@@ -44,7 +44,7 @@ static ExprAST *ParsePrimary(Lexer &lexer) {
   case Token::tokMinus: {
     Token Op = lexer.Current();
     lexer.Next(); // eat '-'
-    ExprAST * expr = ParsePrimary(lexer);
+    ExprAST *expr = ParsePrimary(lexer);
     if (expr == NULL)
       return NULL;
     return new UnaryExprAST(Op.lex_comp, expr);
@@ -96,6 +96,14 @@ static int TokenPrecedence(const Token &token) {
   }
 }
 
+// Operator associativity -1:left associative, 1:right
+static int TokenAssoc(const Token &token) {
+  switch (token.lex_comp) {
+  default:
+    return -1;
+  }
+}
+
 // bioprhs ::= ('+' primary)*
 static ExprAST *ParseBinOpRHS(Lexer &lexer, int ExprPrec, ExprAST *LHS) {
   while (true) {
@@ -110,9 +118,10 @@ static ExprAST *ParseBinOpRHS(Lexer &lexer, int ExprPrec, ExprAST *LHS) {
     if (RHS == NULL)
       return NULL;
     // if BinOp binds less tightly with RHS than the next op (after RHS),
-    // let that next operator take RHS as its LHS
+    // let that next operator take RHS as its LHS (OR if BinOp is right assoc)
     int NextPrec = TokenPrecedence(lexer.Current());
-    if (TokenPrec < NextPrec) { // TODO: if TokenPrec == NextPrec check Operator associativity
+    if (TokenPrec < NextPrec ||
+        (TokenPrec == NextPrec && TokenAssoc(BinOp) == 1)) {
       RHS = ParseBinOpRHS(lexer, TokenPrec + 1, RHS);
       if (RHS == NULL)
         return NULL;
