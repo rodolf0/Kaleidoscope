@@ -109,6 +109,7 @@ static ExprAST *ParseBinOpRHS(Lexer &lexer, int ExprPrec, ExprAST *LHS) {
   while (true) {
     int TokenPrec = TokenPrecedence(lexer.Current());
     // check that binop binds as tightly as the current op, else we're done
+    // if no binop is next then the -1 precedence will bail us out
     if (TokenPrec < ExprPrec)
       return LHS;
     // We now know this is a binary operator
@@ -122,7 +123,7 @@ static ExprAST *ParseBinOpRHS(Lexer &lexer, int ExprPrec, ExprAST *LHS) {
     int NextPrec = TokenPrecedence(lexer.Current());
     if (TokenPrec < NextPrec ||
         (TokenPrec == NextPrec && TokenAssoc(BinOp) == 1)) {
-      RHS = ParseBinOpRHS(lexer, TokenPrec + 1, RHS);
+      RHS = ParseBinOpRHS(lexer, NextPrec, RHS);
       if (RHS == NULL)
         return NULL;
     }
