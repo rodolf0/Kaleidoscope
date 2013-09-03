@@ -1,8 +1,10 @@
+#include <llvm/IR/Module.h>
 #include <vector>
 #include <iostream>
 #include "ast.h"
 
 using namespace std;
+using namespace llvm;
 
 // Error handling
 static ExprAST *ExprError(const char *error) {
@@ -187,6 +189,7 @@ static FunctionAST *ParseTopLevelExpr(Lexer &lexer) {
   return NULL;
 }
 
+// Top level parsing and JIT driver
 // top ::= definition | external | expression | ';'
 void Parse(Lexer &lexer) {
   while (lexer.Current().lex_comp != Token::tokEOF) {
@@ -194,22 +197,34 @@ void Parse(Lexer &lexer) {
     case Token::tokSemicolon:
       lexer.Next(); // eat ';'
       break;
+
     case Token::tokDef:
-      if (ParseFuncDef(lexer))
-        cerr << "Parsed Function definition" << endl;
-      else
+      if (FunctionAST *F = ParseFuncDef(lexer)) {
+        if (Function *LF = F->Codegen()) {
+          cerr << "Parsed Function definition:" << endl;
+          LF->dump();
+        }
+      } else
         lexer.Next(); // skip token for error recovery
       break;
+
     case Token::tokExtern:
-      if (ParseExtern(lexer))
-        cerr << "Parsed an extern" << endl;
-      else
+      if (PrototypeAST *P = ParseExtern(lexer)) {
+        if (Function *F = P->Codegen()) {
+          cerr << "Parsed an extern:" << endl;
+          F->dump();
+        }
+      } else
         lexer.Next(); // skip token for error recovery
       break;
+
     default:
-      if (ParseTopLevelExpr(lexer))
-        cerr << "Parsed a top level expression" << endl;
-      else
+      if (FunctionAST *F = ParseTopLevelExpr(lexer)) {
+        if (Function *LF = F->Codegen()) {
+          cerr << "Parsed a top level expression:" << endl;
+          LF->dump();
+        }
+      } else
         lexer.Next(); // skip token for error recovery
       break;
     }

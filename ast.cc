@@ -1,32 +1,167 @@
+#include <llvm/IR/Module.h>
+#include <llvm/IR/IRBuilder.h>
+#include <llvm/Analysis/Verifier.h>
+#include <iostream>
+#include <map>
+
 #include "ast.h"
 
 using namespace std;
+using namespace llvm;
 
-string ExprAST::String() { return ""; }
+// Error handling
+static Value *ValueError(const char *error) {
+  cerr << error << endl;
+  return NULL;
+}
+static Function *FunctionError(const char *error) {
+  cerr << error << endl;
+  return NULL;
+}
 
+Module *TheModule;
+static IRBuilder<> Builder(getGlobalContext());
+// Symbol table for keeping variable definitions (no scope yet)
+static map<string, Value *> NamedValues;
+
+// ----------------------------------------------------------------------
 NumberExprAST::NumberExprAST(double val) : Val(val) {}
-string NumberExprAST::String() { return to_string(Val); }
 
+Value *NumberExprAST::Codegen() {
+  return ConstantFP::get(getGlobalContext(), APFloat(Val));
+}
+
+// ----------------------------------------------------------------------
 VariableExprAST::VariableExprAST(const string &name) : Name(name) {}
-string VariableExprAST::String() { return Name; }
 
+Value *VariableExprAST::Codegen() {
+  Value *v = NamedValues[Name];
+  return v ? v : ValueError("Unknown variable name");
+}
+
+// ----------------------------------------------------------------------
 UnaryExprAST::UnaryExprAST(Token::lexic_component op, ExprAST *expr)
     : Op(op), Expr(expr) {}
 
+Value *UnaryExprAST::Codegen() {
+  Value *V = Expr->Codegen();
+  if (V == NULL)
+    return NULL;
+  if (Op != Token::tokMinus)
+    return ValueError("Unknown unary operator");
+  return Builder.CreateFNeg(V, "negtmp");
+}
+
+// ----------------------------------------------------------------------
 BinaryExprAST::BinaryExprAST(Token::lexic_component op, ExprAST *lhs,
                              ExprAST *rhs)
     : Op(op), LHS(lhs), RHS(rhs) {}
-string BinaryExprAST::String() {
-  return LHS->String() + " " + to_string(Op) + " " + RHS->String();
+
+Value *BinaryExprAST::Codegen() {
+  Value *L = LHS->Codegen();
+  Value *R = RHS->Codegen();
+  if (L == NULL || R == NULL)
+    return NULL;
+
+  switch (Op) {
+  case Token::tokLT:
+    L = Builder.CreateFCmpULT(L, R, "cmptmp");
+    // convert bool to double
+    return Builder.CreateUIToFP(L, Type::getDoubleTy(getGlobalContext()),
+                                "booltmp");
+  case Token::tokPlus:
+    return Builder.CreateFAdd(L, R, "addtmp");
+  case Token::tokMinus:
+    return Builder.CreateFSub(L, R, "subtmp");
+  case Token::tokMultiply:
+    return Builder.CreateFMul(L, R, "multmp");
+  case Token::tokDivide:
+    return Builder.CreateFDiv(L, R, "divtmp");
+  default:
+    return ValueError("Invalid binary operator");
+  }
 }
 
+// ----------------------------------------------------------------------
 CallExprAST::CallExprAST(const string &callee, vector<ExprAST *> &args)
     : Callee(callee), Args(args) {}
 
+Value *CallExprAST::Codegen() {
+  // lookup our function in the global module table
+  Function *CalleeF = TheModule->getFunction(Callee);
+  if (CalleeF == NULL)
+    return ValueError("Unknown function referenced");
+  if (CalleeF->arg_size() != Args.size())
+    return ValueError("Incorrect # of arguments");
+
+  vector<Value *> ArgsV;
+  //for_each(Args.begin(), Args.end(), [](Value *arg) { ArgsV.push_back(arg);
+  //});
+  for (unsigned i = 0; i < Args.size(); i++) {
+    ArgsV.push_back(Args[i]->Codegen());
+    if (ArgsV.back() == NULL)
+      return NULL;
+  }
+  return Builder.CreateCall(CalleeF, ArgsV, "calltmp");
+}
+
+// ----------------------------------------------------------------------
 PrototypeAST::PrototypeAST(const string &name, const vector<string> &args)
     : Name(name), Args(args) {}
 
+// http://llvm.org/releases/3.3/docs/tutorial/LangImpl3.html#id4
+Function *PrototypeAST::Codegen() {
+  Function *F = NULL;
+  if ((F = TheModule->getFunction(Name)) == NULL) {
+    // make the function type: double(double, double) ... etc.
+    vector<Type *> DblArgs(Args.size(), Type::getDoubleTy(getGlobalContext()));
+    FunctionType *FT = // returns a double, takes n-doubles, is not vararg
+        FunctionType::get(Type::getDoubleTy(getGlobalContext()), DblArgs,
+                          false);
+    // register our function in TheModule with name Name
+    F = Function::Create(FT, Function::ExternalLinkage, Name, TheModule);
+  }
+
+  if (!F->empty()) // check the function es a forward decl if it exists
+    return FunctionError("Function cannot be redefined");
+  if (F->arg_size() != Args.size()) // defined and empty => extern, check # args
+    return FunctionError("Redefinition of function with wrong # of args");
+
+  // set names for all arguments
+  unsigned idx = 0;
+  for (Function::arg_iterator AI = F->arg_begin(); idx != Args.size();
+       ++AI, ++idx) {
+    AI->setName(Args[idx]);
+    // add arguments to variable sym-table
+    NamedValues[Args[idx]] = AI;
+  }
+  return F;
+}
+
+// ----------------------------------------------------------------------
 FunctionAST::FunctionAST(PrototypeAST *proto, ExprAST *body)
     : Proto(proto), Body(body) {}
 
-/* vim: set sw=2 sts=2l  : */
+Function *FunctionAST::Codegen() {
+  NamedValues.clear(); // only let some variables be in scope
+  Function *F = Proto->Codegen();
+  if (F == NULL)
+    return NULL;
+
+  // Create a new basic block to start insertion into.
+  BasicBlock *BB = BasicBlock::Create(getGlobalContext(), "entry", F);
+  Builder.SetInsertPoint(BB);
+
+  if (Value *RetVal = Body->Codegen()) {
+    // finish off the function
+    Builder.CreateRet(RetVal);
+    //Validate the generated code, checking for consistency
+    verifyFunction(*F);
+    return F;
+  }
+  // Error reading body, remove function from fsym-tab to let usr redefine it
+  F->eraseFromParent();
+  return NULL;
+}
+
+/* vim: set sw=2 sts=2  : */
