@@ -1,6 +1,7 @@
 #include <llvm/IR/Module.h>
 #include <llvm/IR/IRBuilder.h>
 #include <llvm/Analysis/Verifier.h>
+#include <llvm/PassManager.h>
 #include <iostream>
 #include <map>
 
@@ -19,7 +20,8 @@ static Function *FunctionError(const char *error) {
   return NULL;
 }
 
-Module *TheModule;
+Module *TheModule = NULL;
+FunctionPassManager *TheFPM = NULL;
 static IRBuilder<> Builder(getGlobalContext());
 // Symbol table for keeping variable definitions (no scope yet)
 static map<string, Value *> NamedValues;
@@ -157,6 +159,11 @@ Function *FunctionAST::Codegen() {
     Builder.CreateRet(RetVal);
     //Validate the generated code, checking for consistency
     verifyFunction(*F);
+
+    // Optimize the function of the Optimizer is available
+    if (TheFPM != NULL)
+      TheFPM->run(*F);
+
     return F;
   }
   // Error reading body, remove function from fsym-tab to let usr redefine it
