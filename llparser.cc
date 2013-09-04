@@ -1,4 +1,5 @@
 #include <llvm/IR/Module.h>
+#include <llvm/ExecutionEngine/ExecutionEngine.h>
 #include <vector>
 #include <iostream>
 #include "ast.h"
@@ -15,6 +16,8 @@ static PrototypeAST *ProtoError(const char *error) {
   ExprError(error);
   return NULL;
 }
+
+ExecutionEngine *TheEE = NULL;
 
 // Parser functions policy: eat all tokens corresponding to the production
 
@@ -221,8 +224,10 @@ void Parse(Lexer &lexer) {
     default:
       if (FunctionAST *F = ParseTopLevelExpr(lexer)) {
         if (Function *LF = F->Codegen()) {
-          cerr << "Parsed a top level expression:" << endl;
-          LF->dump();
+          LF->dump(); // dump the function for exposition
+                      // JIT the function returning a func ptr
+          double(*FP)() = (double(*)()) TheEE->getPointerToFunction(LF);
+          cerr << "Func returned: " << FP() << endl;
         }
       } else
         lexer.Next(); // skip token for error recovery

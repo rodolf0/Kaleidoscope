@@ -1,8 +1,11 @@
 #include <llvm/IR/Module.h>
 #include <llvm/IR/IRBuilder.h>
+#include <llvm/Analysis/Passes.h>
+#include <llvm/Transforms/Scalar.h>
 #include <llvm/PassManager.h>
 #include <llvm/ExecutionEngine/ExecutionEngine.h>
-#include <llvm/LinkAllPasses.h>
+#include <llvm/ExecutionEngine/JIT.h>
+#include <llvm/Support/TargetSelect.h>
 #include <iostream>
 #include "lexer.h"
 
@@ -10,15 +13,16 @@ using namespace std;
 
 extern llvm::Module *TheModule;
 extern llvm::FunctionPassManager *TheFPM;
+extern llvm::ExecutionEngine *TheEE;
 void Parse(Lexer &lexer);
 
 int main() {
+  llvm::InitializeNativeTarget();
   TheModule = new llvm::Module("my cool jit module", llvm::getGlobalContext());
 
   // Create the JIT, this takes ownership of the module.
   string ErrStr;
-  llvm::ExecutionEngine *TheEE =
-      llvm::EngineBuilder(TheModule).setErrorStr(&ErrStr).create();
+  TheEE = llvm::EngineBuilder(TheModule).setErrorStr(&ErrStr).create();
   if (TheEE == NULL) {
     cerr << "Failed to create Execution Engine: " << ErrStr << endl;
     return 1;
