@@ -171,4 +171,62 @@ Function *FunctionAST::Codegen() {
   return NULL;
 }
 
+// ----------------------------------------------------------------------
+IfExprAST::IfExprAST(ExprAST *cond, ExprAST *then, ExprAST *_else)
+    : Cond(cond), Then(then), Else(_else) {}
+
+Value *IfExprAST::Codegen() {
+  Value *CondV = Cond->Codegen();
+  if (CondV == NULL)
+    return NULL;
+
+  // convert condition to a bool by comparing equal to 0.0
+  CondV = Builder.CreateFCmpONE(
+      CondV, ConstantFP::get(getGlobalContext(), APFloat(0.0)), "ifcond");
+
+  // ask the builder for the current basic block,
+  // the parent of this BB is the function holding it
+  Function *F = Builder.GetInsertBlock()->getParent();
+
+  // create BBlocks for if/then/else cases
+  // insert the "then" block at the end of the F function
+  BasicBlock *ThenBB = BasicBlock::Create(getGlobalContext(), "then", F);
+  BasicBlock *ElseBB = BasicBlock::Create(getGlobalContext(), "else");
+  // where to resume after conditional
+  BasicBlock *MergeBB = BasicBlock::Create(getGlobalContext(), "ifcont");
+  Builder.CreateCondBr(CondV, ThenBB, ElseBB);
+  // emit the value
+  Builder.SetInsertPoint(ThenBB);
+
+  Value *ThenV = Then->Codegen();
+  if (ThenV == NULL)
+    return NULL; // TODO: cleanup?
+
+  Builder.CreateBr(MergeBB);
+  // Codegen of 'Then' could switch the current block, update ThenBB for the
+  // PHI.
+  ThenBB = Builder.GetInsertBlock();
+
+  // emit else block
+  F->getBasicBlockList().push_back(ElseBB);
+  Builder.SetInsertPoint(ElseBB);
+
+  Value *ElseV = Else->Codegen();
+  if (ElseV == NULL)
+    return NULL;
+
+  Builder.CreateBr(MergeBB);
+  // Codegen for 'Else' can also switch the current block, get it
+  ElseBB = Builder.GetInsertBlock();
+
+  // emit merge block
+  F->getBasicBlockList().push_back(MergeBB);
+  Builder.SetInsertPoint(MergeBB);
+  PHINode *PN =
+      Builder.CreatePHI(Type::getDoubleTy(getGlobalContext()), 2, "iftmp");
+  PN->addIncoming(ThenV, ThenBB);
+  PN->addIncoming(ElseV, ElseBB);
+  return PN;
+}
+
 /* vim: set sw=2 sts=2  : */

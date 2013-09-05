@@ -14,6 +14,10 @@ public:
     // primary
     tokId = -4,
     tokNumber = -5,
+    // control
+    tokIf = -6,
+    tokThen = -7,
+    tokElse = -8,
     // explicitly enumerate some used by parser
     tokSemicolon = ';',
     tokOParen = '(',

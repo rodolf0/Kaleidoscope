@@ -67,6 +67,12 @@ Token Lexer::next() {
       return Token(lexem, Token::tokDef);
     if (lexem == "extern")
       return Token(lexem, Token::tokExtern);
+    if (lexem == "if")
+      return Token(lexem, Token::tokIf);
+    if (lexem == "then")
+      return Token(lexem, Token::tokThen);
+    if (lexem == "else")
+      return Token(lexem, Token::tokElse);
     return Token(lexem, Token::tokId);
   }
 

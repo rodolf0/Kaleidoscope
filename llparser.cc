@@ -23,7 +23,29 @@ ExecutionEngine *TheEE = NULL;
 
 static ExprAST *ParseExpression(Lexer &lexer);
 
-// primary ::= identifierexpr | numberexpr | parenexpr | '-' primary
+static ExprAST *ParseIfExpr(Lexer &lexer) {
+  lexer.Next(); // eat 'if'
+  ExprAST *Cond = ParseExpression(lexer);
+  if (Cond == NULL)
+    return NULL;
+  // parse the branch for the condition being met
+  if (lexer.Current().lex_comp != Token::tokThen)
+    return ExprError("Expected 'then' in conditional");
+  lexer.Next(); // eat 'then'
+  ExprAST *Then = ParseExpression(lexer);
+  if (Then == NULL)
+    return NULL;
+  // check for a branch for the condition not being met
+  if (lexer.Current().lex_comp != Token::tokElse)
+    return ExprError("Expected 'else' in conditional");
+  lexer.Next(); // eat 'else'
+  ExprAST *Else = ParseExpression(lexer);
+  if (Else == NULL)
+    return NULL;
+  return new IfExprAST(Cond, Then, Else);
+}
+
+// primary ::= identifierexpr | numberexpr | parenexpr | '-' primary | ifexpr
 static ExprAST *ParsePrimary(Lexer &lexer) {
   switch (lexer.Current().lex_comp) {
   // numberexpr
@@ -80,6 +102,9 @@ static ExprAST *ParsePrimary(Lexer &lexer) {
     lexer.Next(); // eat ')'
     return new CallExprAST(IdName, Args);
   }
+
+  // ifexpr
+  case Token::tokIf: { return ParseIfExpr(lexer); }
 
   default:
     return ExprError("Unknown token. Expected expression");
