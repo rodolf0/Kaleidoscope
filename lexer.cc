@@ -7,7 +7,7 @@ Token::Token(const string &lexem, lexic_component lex_comp)
     : lexem(lexem), lex_comp(lex_comp) {}
 
 Lexer::Lexer(istream &input)
-  : input(input), current(Token("", Token::tokEOF)) {}
+    : input(input), current(Token("", Token::tokEOF)) {}
 const Token &Lexer::Current() { return current; }
 
 const Token &Lexer::Next() {

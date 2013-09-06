@@ -1,11 +1,7 @@
-#include <llvm/IR/Module.h>
-#include <llvm/ExecutionEngine/ExecutionEngine.h>
-#include <vector>
 #include <iostream>
 #include "ast.h"
 
 using namespace std;
-using namespace llvm;
 
 // Error handling
 static ExprAST *ExprError(const char *error) {
@@ -16,8 +12,6 @@ static PrototypeAST *ProtoError(const char *error) {
   ExprError(error);
   return NULL;
 }
-
-ExecutionEngine *TheEE = NULL;
 
 // Parser functions policy: eat all tokens corresponding to the production
 
@@ -217,48 +211,38 @@ static FunctionAST *ParseTopLevelExpr(Lexer &lexer) {
   return NULL;
 }
 
-// Top level parsing and JIT driver
 // top ::= definition | external | expression | ';'
-void Parse(Lexer &lexer) {
-  while (lexer.Current().lex_comp != Token::tokEOF) {
-    switch (lexer.Current().lex_comp) {
-    case Token::tokSemicolon:
-      lexer.Next(); // eat ';'
-      break;
+llvm::Function *ParseNext(Lexer &lexer, Executor &ctx) {
+  switch (lexer.Current().lex_comp) {
+  case Token::tokEOF:
+    break;
 
-    case Token::tokDef:
-      if (FunctionAST *F = ParseFuncDef(lexer)) {
-        if (Function *LF = F->Codegen()) {
-          cerr << "Parsed Function definition:" << endl;
-          LF->dump();
-        }
-      } else
-        lexer.Next(); // skip token for error recovery
-      break;
+  case Token::tokSemicolon:
+    lexer.Next(); // eat ';'
+    break;
 
-    case Token::tokExtern:
-      if (PrototypeAST *P = ParseExtern(lexer)) {
-        if (Function *F = P->Codegen()) {
-          cerr << "Parsed an extern:" << endl;
-          F->dump();
-        }
-      } else
-        lexer.Next(); // skip token for error recovery
-      break;
+  case Token::tokDef:
+    if (FunctionAST *F = ParseFuncDef(lexer)) {
+      return F->Codegen(ctx);
+    } else
+      lexer.Next(); // skip token for error recovery
+    break;
 
-    default:
-      if (FunctionAST *F = ParseTopLevelExpr(lexer)) {
-        if (Function *LF = F->Codegen()) {
-          LF->dump(); // dump the function for exposition
-                      // JIT the function returning a func ptr
-          double(*FP)() = (double(*)()) TheEE->getPointerToFunction(LF);
-          cerr << "Func returned: " << FP() << endl;
-        }
-      } else
-        lexer.Next(); // skip token for error recovery
-      break;
-    }
+  case Token::tokExtern:
+    if (PrototypeAST *P = ParseExtern(lexer)) {
+      return P->Codegen(ctx);
+    } else
+      lexer.Next(); // skip token for error recovery
+    break;
+
+  default:
+    if (FunctionAST *F = ParseTopLevelExpr(lexer)) {
+      return F->Codegen(ctx);
+    } else
+      lexer.Next(); // skip token for error recovery
+    break;
   }
+  return NULL;
 }
 
 /* vim: set sw=2 sts=2 : */
