@@ -40,7 +40,7 @@ Executor::fptr Executor::Exec(Lexer &lexer) {
   // JIT the function returning a func ptr
   if (Function *F = ParseNext(lexer, *this)) {
     //F->dump();
-    return (double(*)())TheEE->getPointerToFunction(F);
+    return (double(*)()) TheEE->getPointerToFunction(F);
   }
   return NULL;
 }
@@ -163,7 +163,7 @@ FunctionAST::FunctionAST(PrototypeAST *proto, ExprAST *body)
     : Proto(proto), Body(body) {}
 
 Function *FunctionAST::Codegen(Executor &ctx) {
-  ctx.NamedValues.clear(); // only let some variables be in scope
+  ctx.NamedValues.clear(); // clear scope
   Function *F = Proto->Codegen(ctx);
   if (F == NULL)
     return NULL;
@@ -205,45 +205,59 @@ Value *IfExprAST::Codegen(Executor &ctx) {
   // ask the builder for the current basic block,
   // the parent of this BB is the function holding it
   Function *F = ctx.Builder.GetInsertBlock()->getParent();
+  BasicBlock *PreBB = ctx.Builder.GetInsertBlock();
 
-  // create BBlocks for if/then/else cases
-  // insert the "then" block at the end of the F function
+  // create BBlocks for if/then/else inserting the "then" block
+  // at the end of the F function, other blocks are yet not inserted
   BasicBlock *ThenBB = BasicBlock::Create(ctx.TheContext, "then", F);
-  BasicBlock *ElseBB = BasicBlock::Create(ctx.TheContext, "else");
-  // where to resume after conditional
+  BasicBlock *ElseBB = NULL;
+  if (Else)
+    ElseBB = BasicBlock::Create(ctx.TheContext, "else");
   BasicBlock *MergeBB = BasicBlock::Create(ctx.TheContext, "ifcont");
-  ctx.Builder.CreateCondBr(CondV, ThenBB, ElseBB);
-  // emit the value
-  ctx.Builder.SetInsertPoint(ThenBB);
+  // where to resume (even though these blocks are yet not inserted)
+  if (Else)
+    ctx.Builder.CreateCondBr(CondV, ThenBB, ElseBB);
+  else
+    ctx.Builder.CreateCondBr(CondV, ThenBB, MergeBB);
 
+  // Set the builder to emit at ThenBB
+  ctx.Builder.SetInsertPoint(ThenBB);
   Value *ThenV = Then->Codegen(ctx);
   if (ThenV == NULL)
-    return NULL; // TODO: cleanup?
-
-  ctx.Builder.CreateBr(MergeBB);
-  // Codegen of 'Then' could switch the current block, update ThenBB for the
-  // PHI.
+    return NULL;                 // TODO: cleanup?
+  ctx.Builder.CreateBr(MergeBB); // once ThenBB is finished skip to Merge
+  // The Codegen for the Then block may have changed the BB where code is
+  // being emited, get a handle on this latest BB to build the PHI node
   ThenBB = ctx.Builder.GetInsertBlock();
 
-  // emit else block
-  F->getBasicBlockList().push_back(ElseBB);
-  ctx.Builder.SetInsertPoint(ElseBB);
+  Value *ElseV = NULL;
+  if (Else) {
+    // Emit the Else block, re-set the insertion point (see prev comment)
+    F->getBasicBlockList().push_back(ElseBB);
+    ctx.Builder.SetInsertPoint(ElseBB);
+    ElseV = Else->Codegen(ctx);
+    if (ElseV == NULL)
+      return NULL;
+    ctx.Builder.CreateBr(MergeBB); // finalize ElseBB
+    // Codegen for 'Else' may have switched BB, get handle to current
+    ElseBB = ctx.Builder.GetInsertBlock();
+  }
 
-  Value *ElseV = Else->Codegen(ctx);
-  if (ElseV == NULL)
-    return NULL;
-
-  ctx.Builder.CreateBr(MergeBB);
-  // Codegen for 'Else' can also switch the current block, get it
-  ElseBB = ctx.Builder.GetInsertBlock();
-
-  // emit merge block
+  // Emit the Merge block, re-set insertion point...
   F->getBasicBlockList().push_back(MergeBB);
+  ctx.Builder.SetInsertPoint(MergeBB);
+  // Create PHI node to return the conditional blocks
   ctx.Builder.SetInsertPoint(MergeBB);
   PHINode *PN =
       ctx.Builder.CreatePHI(Type::getDoubleTy(ctx.TheContext), 2, "iftmp");
   PN->addIncoming(ThenV, ThenBB);
-  PN->addIncoming(ElseV, ElseBB);
+  if (Else) {
+    PN->addIncoming(ElseV, ElseBB);
+  } else {
+    Value *NullV = Constant::getNullValue(Type::getDoubleTy(ctx.TheContext));
+    PN->addIncoming(NullV, PreBB);
+  }
+
   return PN;
 }
 

@@ -29,9 +29,9 @@ static ExprAST *ParseIfExpr(Lexer &lexer) {
   ExprAST *Then = ParseExpression(lexer);
   if (Then == NULL)
     return NULL;
-  // check for a branch for the condition not being met
+  // check if there's an else clause
   if (lexer.Current().lex_comp != Token::tokElse)
-    return ExprError("Expected 'else' in conditional");
+    return new IfExprAST(Cond, Then, NULL);
   lexer.Next(); // eat 'else'
   ExprAST *Else = ParseExpression(lexer);
   if (Else == NULL)
@@ -222,23 +222,23 @@ llvm::Function *ParseNext(Lexer &lexer, Executor &ctx) {
     break;
 
   case Token::tokDef:
-    if (FunctionAST *F = ParseFuncDef(lexer)) {
-      return F->Codegen(ctx);
-    } else
+    if (FunctionAST *F = ParseFuncDef(lexer))
+      F->Codegen(ctx);
+    else
       lexer.Next(); // skip token for error recovery
     break;
 
   case Token::tokExtern:
-    if (PrototypeAST *P = ParseExtern(lexer)) {
-      return P->Codegen(ctx);
-    } else
+    if (PrototypeAST *P = ParseExtern(lexer))
+      P->Codegen(ctx);
+    else
       lexer.Next(); // skip token for error recovery
     break;
 
   default:
-    if (FunctionAST *F = ParseTopLevelExpr(lexer)) {
+    if (FunctionAST *F = ParseTopLevelExpr(lexer))
       return F->Codegen(ctx);
-    } else
+    else
       lexer.Next(); // skip token for error recovery
     break;
   }

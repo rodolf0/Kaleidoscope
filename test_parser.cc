@@ -9,7 +9,7 @@ int main() {
   lexer.Next(); // bootstrap the lexer
 
   while (lexer.Current().lex_comp != Token::tokEOF) {
-    if (double (*FP)() = exec.Exec(lexer))
+    if (double(*FP)() = exec.Exec(lexer))
       cerr << FP() << endl;
   }
 
