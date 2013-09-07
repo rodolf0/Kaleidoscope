@@ -13,7 +13,7 @@
 
 #include "lexer.h"
 
-class Executor {
+class Kaleidoscope {
 public:
   llvm::LLVMContext &TheContext;
   llvm::IRBuilder<> Builder;
@@ -24,14 +24,14 @@ public:
 
   typedef double (*fptr)();
 
-  Executor();              // TODO: free resources
-  fptr Exec(Lexer &lexer); // returns a func-pointer
+  Kaleidoscope();              // TODO: free resources
+  fptr Parse(Lexer &lexer); // returns a func-pointer
 };
 
 class ExprAST {
 public:
   virtual ~ExprAST() {}
-  virtual llvm::Value *Codegen(Executor &ctx) = 0;
+  virtual llvm::Value *Codegen(Kaleidoscope &ctx) = 0;
 };
 
 // Expression for numeric values
@@ -40,7 +40,7 @@ class NumberExprAST : public ExprAST {
 
 public:
   NumberExprAST(double val);
-  virtual llvm::Value *Codegen(Executor &ctx);
+  virtual llvm::Value *Codegen(Kaleidoscope &ctx);
 };
 
 // Expression for variable references
@@ -49,7 +49,7 @@ class VariableExprAST : public ExprAST {
 
 public:
   VariableExprAST(const std::string &name);
-  virtual llvm::Value *Codegen(Executor &ctx);
+  virtual llvm::Value *Codegen(Kaleidoscope &ctx);
 };
 
 // Expressions for a unary operator
@@ -59,7 +59,7 @@ class UnaryExprAST : public ExprAST {
 
 public:
   UnaryExprAST(Token::lexic_component op, ExprAST *expr);
-  virtual llvm::Value *Codegen(Executor &ctx);
+  virtual llvm::Value *Codegen(Kaleidoscope &ctx);
 };
 
 // Expressions for a binary operator
@@ -69,7 +69,7 @@ class BinaryExprAST : public ExprAST {
 
 public:
   BinaryExprAST(Token::lexic_component op, ExprAST *lhs, ExprAST *rhs);
-  virtual llvm::Value *Codegen(Executor &ctx);
+  virtual llvm::Value *Codegen(Kaleidoscope &ctx);
 };
 
 // Expression for function calls
@@ -79,7 +79,7 @@ class CallExprAST : public ExprAST {
 
 public:
   CallExprAST(const std::string &callee, std::vector<ExprAST *> &args);
-  virtual llvm::Value *Codegen(Executor &ctx);
+  virtual llvm::Value *Codegen(Kaleidoscope &ctx);
 };
 
 // This represents a function signature
@@ -89,7 +89,7 @@ class PrototypeAST {
 
 public:
   PrototypeAST(const std::string &name, const std::vector<std::string> &args);
-  virtual llvm::Function *Codegen(Executor &ctx);
+  virtual llvm::Function *Codegen(Kaleidoscope &ctx);
 };
 
 // This represents an actual function definition
@@ -99,7 +99,7 @@ class FunctionAST {
 
 public:
   FunctionAST(PrototypeAST *proto, ExprAST *body);
-  virtual llvm::Function *Codegen(Executor &ctx);
+  virtual llvm::Function *Codegen(Kaleidoscope &ctx);
 };
 
 // Conditional expressions
@@ -110,11 +110,11 @@ class IfExprAST : public ExprAST {
 
 public:
   IfExprAST(ExprAST *cond, ExprAST *then, ExprAST *_else);
-  virtual llvm::Value *Codegen(Executor &ctx);
+  virtual llvm::Value *Codegen(Kaleidoscope &ctx);
 };
 
 // Parse a top level rule
-llvm::Function *ParseNext(Lexer &lexer, Executor &ctx);
+llvm::Function *ParseNext(Lexer &lexer, Kaleidoscope &ctx);
 
 #endif // _AST_H_
 

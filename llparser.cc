@@ -212,13 +212,13 @@ static FunctionAST *ParseTopLevelExpr(Lexer &lexer) {
 }
 
 // top ::= definition | external | expression | ';'
-llvm::Function *ParseNext(Lexer &lexer, Executor &ctx) {
+llvm::Function *ParseNext(Lexer &lexer, Kaleidoscope &ctx) {
   switch (lexer.Current().lex_comp) {
   case Token::tokEOF:
     break;
 
   case Token::tokSemicolon:
-    lexer.Next(); // eat ';'
+    lexer.Next(); // ignore top-level ';'
     break;
 
   case Token::tokDef:

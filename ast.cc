@@ -20,9 +20,9 @@ static Function *FunctionError(const char *error) {
   return NULL;
 }
 
-Executor::Executor() : TheContext(getGlobalContext()), Builder(TheContext) {
+Kaleidoscope::Kaleidoscope() : TheContext(getGlobalContext()), Builder(TheContext) {
   InitializeNativeTarget();
-  TheModule = new Module("parser module", TheContext);
+  TheModule = new Module("Kaleidoscope", TheContext);
   // Create the JIT execution engine
   TheEE = EngineBuilder(TheModule).create();
   // setup a function level optimizer
@@ -36,7 +36,7 @@ Executor::Executor() : TheContext(getGlobalContext()), Builder(TheContext) {
   TheFPM->doInitialization();
 }
 
-Executor::fptr Executor::Exec(Lexer &lexer) {
+Kaleidoscope::fptr Kaleidoscope::Parse(Lexer &lexer) {
   // JIT the function returning a func ptr
   if (Function *F = ParseNext(lexer, *this)) {
     //F->dump();
@@ -48,14 +48,14 @@ Executor::fptr Executor::Exec(Lexer &lexer) {
 // ----------------------------------------------------------------------
 NumberExprAST::NumberExprAST(double val) : Val(val) {}
 
-Value *NumberExprAST::Codegen(Executor &ctx) {
+Value *NumberExprAST::Codegen(Kaleidoscope &ctx) {
   return ConstantFP::get(ctx.TheContext, APFloat(Val));
 }
 
 // ----------------------------------------------------------------------
 VariableExprAST::VariableExprAST(const string &name) : Name(name) {}
 
-Value *VariableExprAST::Codegen(Executor &ctx) {
+Value *VariableExprAST::Codegen(Kaleidoscope &ctx) {
   Value *v = ctx.NamedValues[Name];
   return v ? v : ValueError("Unknown variable name");
 }
@@ -64,7 +64,7 @@ Value *VariableExprAST::Codegen(Executor &ctx) {
 UnaryExprAST::UnaryExprAST(Token::lexic_component op, ExprAST *expr)
     : Op(op), Expr(expr) {}
 
-Value *UnaryExprAST::Codegen(Executor &ctx) {
+Value *UnaryExprAST::Codegen(Kaleidoscope &ctx) {
   Value *V = Expr->Codegen(ctx);
   if (V == NULL)
     return NULL;
@@ -78,7 +78,7 @@ BinaryExprAST::BinaryExprAST(Token::lexic_component op, ExprAST *lhs,
                              ExprAST *rhs)
     : Op(op), LHS(lhs), RHS(rhs) {}
 
-Value *BinaryExprAST::Codegen(Executor &ctx) {
+Value *BinaryExprAST::Codegen(Kaleidoscope &ctx) {
   Value *L = LHS->Codegen(ctx);
   Value *R = RHS->Codegen(ctx);
   if (L == NULL || R == NULL)
@@ -107,7 +107,7 @@ Value *BinaryExprAST::Codegen(Executor &ctx) {
 CallExprAST::CallExprAST(const string &callee, vector<ExprAST *> &args)
     : Callee(callee), Args(args) {}
 
-Value *CallExprAST::Codegen(Executor &ctx) {
+Value *CallExprAST::Codegen(Kaleidoscope &ctx) {
   // lookup our function in the global module table
   Function *CalleeF = ctx.TheModule->getFunction(Callee);
   if (CalleeF == NULL)
@@ -131,7 +131,7 @@ PrototypeAST::PrototypeAST(const string &name, const vector<string> &args)
     : Name(name), Args(args) {}
 
 // http://llvm.org/releases/3.3/docs/tutorial/LangImpl3.html#id4
-Function *PrototypeAST::Codegen(Executor &ctx) {
+Function *PrototypeAST::Codegen(Kaleidoscope &ctx) {
   Function *F = NULL;
   if ((F = ctx.TheModule->getFunction(Name)) == NULL) {
     // make the function type: double(double, double) ... etc.
@@ -162,7 +162,7 @@ Function *PrototypeAST::Codegen(Executor &ctx) {
 FunctionAST::FunctionAST(PrototypeAST *proto, ExprAST *body)
     : Proto(proto), Body(body) {}
 
-Function *FunctionAST::Codegen(Executor &ctx) {
+Function *FunctionAST::Codegen(Kaleidoscope &ctx) {
   ctx.NamedValues.clear(); // clear scope
   Function *F = Proto->Codegen(ctx);
   if (F == NULL)
@@ -193,7 +193,7 @@ Function *FunctionAST::Codegen(Executor &ctx) {
 IfExprAST::IfExprAST(ExprAST *cond, ExprAST *then, ExprAST *_else)
     : Cond(cond), Then(then), Else(_else) {}
 
-Value *IfExprAST::Codegen(Executor &ctx) {
+Value *IfExprAST::Codegen(Kaleidoscope &ctx) {
   Value *CondV = Cond->Codegen(ctx);
   if (CondV == NULL)
     return NULL;

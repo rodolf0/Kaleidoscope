@@ -5,12 +5,12 @@ using namespace std;
 
 int main() {
   Lexer lexer(cin);
-  Executor exec;
+  Kaleidoscope K;
 
   cout << ">> ";
   lexer.Next(); // bootstrap the lexer
   while (lexer.Current().lex_comp != Token::tokEOF) {
-    if (double(*FP)() = exec.Exec(lexer)) {
+    if (double(*FP)() = K.Parse(lexer)) {
       cout << FP() << endl << ">> ";
     }
   }
