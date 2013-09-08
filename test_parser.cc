@@ -7,11 +7,10 @@ int main() {
   Lexer lexer(cin);
   Kaleidoscope K;
 
-  cout << ">> ";
   lexer.Next(); // bootstrap the lexer
   while (lexer.Current().lex_comp != Token::tokEOF) {
     if (double(*FP)() = K.Parse(lexer)) {
-      cout << FP() << endl << ">> ";
+      cout << ">> " << FP() << endl;
     }
   }
 

@@ -10,6 +10,7 @@
 #include <string>
 #include <vector>
 #include <map>
+#include <utility>
 
 #include "lexer.h"
 
@@ -113,8 +114,8 @@ public:
   virtual llvm::Value *Codegen(Kaleidoscope &ctx);
 };
 
-// Parse a top level rule
-llvm::Function *ParseNext(Lexer &lexer, Kaleidoscope &ctx);
+// Parse a top-level, return <success, function ptr if aplicable>
+std::pair<bool, llvm::Function*> ParseNext(Lexer &lexer, Kaleidoscope &ctx);
 
 #endif // _AST_H_
 

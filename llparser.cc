@@ -212,37 +212,39 @@ static FunctionAST *ParseTopLevelExpr(Lexer &lexer) {
 }
 
 // top ::= definition | external | expression | ';'
-llvm::Function *ParseNext(Lexer &lexer, Kaleidoscope &ctx) {
+// returns true for success, false if any parse errors, and a F if applicable
+pair<bool, llvm::Function *> ParseNext(Lexer &lexer, Kaleidoscope &ctx) {
   switch (lexer.Current().lex_comp) {
   case Token::tokEOF:
+    return make_pair(true, (llvm::Function *)NULL);
     break;
 
   case Token::tokSemicolon:
     lexer.Next(); // ignore top-level ';'
-    break;
+    return make_pair(true, (llvm::Function *)NULL);
 
   case Token::tokDef:
-    if (FunctionAST *F = ParseFuncDef(lexer))
+    if (FunctionAST *F = ParseFuncDef(lexer)) {
       F->Codegen(ctx);
-    else
-      lexer.Next(); // skip token for error recovery
+      return make_pair(true, (llvm::Function *)NULL);
+    }
     break;
 
   case Token::tokExtern:
-    if (PrototypeAST *P = ParseExtern(lexer))
+    if (PrototypeAST *P = ParseExtern(lexer)) {
       P->Codegen(ctx);
-    else
-      lexer.Next(); // skip token for error recovery
+      return make_pair(true, (llvm::Function *)NULL);
+    }
     break;
 
   default:
     if (FunctionAST *F = ParseTopLevelExpr(lexer))
-      return F->Codegen(ctx);
-    else
-      lexer.Next(); // skip token for error recovery
+      return make_pair(true, F->Codegen(ctx));
     break;
   }
-  return NULL;
+
+  lexer.Next(); // skip token for error recovery
+  return make_pair(false, (llvm::Function *)NULL);
 }
 
 /* vim: set sw=2 sts=2 : */

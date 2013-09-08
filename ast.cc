@@ -38,9 +38,10 @@ Kaleidoscope::Kaleidoscope() : TheContext(getGlobalContext()), Builder(TheContex
 
 Kaleidoscope::fptr Kaleidoscope::Parse(Lexer &lexer) {
   // JIT the function returning a func ptr
-  if (Function *F = ParseNext(lexer, *this)) {
-    //F->dump();
-    return (double(*)()) TheEE->getPointerToFunction(F);
+  pair<bool, Function*> R = ParseNext(lexer, *this);
+  if (R.first && R.second) {
+    //R.second->dump();
+    return (double(*)()) TheEE->getPointerToFunction(R.second);
   }
   return NULL;
 }
