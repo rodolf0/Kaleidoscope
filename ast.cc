@@ -20,7 +20,8 @@ static Function *FunctionError(const char *error) {
   return NULL;
 }
 
-Kaleidoscope::Kaleidoscope() : TheContext(getGlobalContext()), Builder(TheContext) {
+Kaleidoscope::Kaleidoscope()
+    : TheContext(getGlobalContext()), Builder(TheContext) {
   InitializeNativeTarget();
   TheModule = new Module("Kaleidoscope", TheContext);
   // Create the JIT execution engine
@@ -38,7 +39,7 @@ Kaleidoscope::Kaleidoscope() : TheContext(getGlobalContext()), Builder(TheContex
 
 Kaleidoscope::fptr Kaleidoscope::Parse(Lexer &lexer) {
   // JIT the function returning a func ptr
-  pair<bool, Function*> R = ParseNext(lexer, *this);
+  pair<bool, Function *> R = ParseNext(lexer, *this);
   if (R.first && R.second) {
     //R.second->dump();
     return (double(*)()) TheEE->getPointerToFunction(R.second);
@@ -260,6 +261,74 @@ Value *IfExprAST::Codegen(Kaleidoscope &ctx) {
   }
 
   return PN;
+}
+
+// ----------------------------------------------------------------------
+ForExprAST::ForExprAST(const std::string &varname, ExprAST *start, ExprAST *end,
+                       ExprAST *step, ExprAST *body)
+    : VarName(varname), Start(start), End(end), Step(step), Body(body) {}
+
+Value *ForExprAST::Codegen(Kaleidoscope &ctx) {
+  Value *StartV = Start->Codegen(ctx);
+  if (StartV == NULL)
+    return NULL;
+
+  Function *F = ctx.Builder.GetInsertBlock()->getParent();
+  BasicBlock *PreBB = ctx.Builder.GetInsertBlock();
+  BasicBlock *LoopBB = BasicBlock::Create(ctx.TheContext, "loop", F);
+  // insert explicit fall-through to loop body
+  ctx.Builder.CreateBr(LoopBB);
+
+  ctx.Builder.SetInsertPoint(LoopBB);
+  PHINode *Var = ctx.Builder
+      .CreatePHI(Type::getDoubleTy(ctx.TheContext), 2, VarName.c_str());
+  // set the variable to it's initial value if coming in first time
+  Var->addIncoming(StartV, PreBB);
+
+  // if the loop scope shadows a variable, keep it's old value
+  Value *VarShadow = ctx.NamedValues[VarName];
+  ctx.NamedValues[VarName] = Var;
+  // generate Body now that the loop variable is in scope
+  Value *BodyV = Body->Codegen(ctx);
+  if (BodyV == NULL)
+    return NULL;
+
+  Value *StepV = NULL;
+  if (Step) {
+    StepV = Step->Codegen(ctx);
+    if (StepV == NULL)
+      return NULL;
+  } else {
+    StepV = ConstantFP::get(ctx.TheContext, APFloat(1.0));
+  }
+  // increment the loop variable with the step
+  Value *NextVal = ctx.Builder.CreateFAdd(Var, StepV, "nextvar");
+  // compute end condition
+  Value *EndV = End->Codegen(ctx);
+  if (End == NULL)
+    return NULL;
+  // convert condition to bool by comparing to 0.0
+  EndV = ctx.Builder.CreateFCmpONE(
+      EndV, ConstantFP::get(ctx.TheContext, APFloat(0.0)), "loopcond");
+
+  // get a handle on wherever we're inserting, this is the loop's end
+  BasicBlock *LoopEndBB = ctx.Builder.GetInsertBlock();
+  // insert the block coming after the loop
+  BasicBlock *AfterBB = BasicBlock::Create(ctx.TheContext, "afterloop", F);
+  ctx.Builder.CreateCondBr(EndV, LoopBB, AfterBB); // condition to keep looping
+  // continue writing after the loop
+  ctx.Builder.SetInsertPoint(AfterBB);
+  // set variable to NextVal if in-coming from Loop's end
+  Var->addIncoming(NextVal, LoopEndBB);
+
+  // restore possibly shadowed var
+  if (VarShadow)
+    ctx.NamedValues[VarName] = VarShadow;
+  else
+    ctx.NamedValues.erase(VarName);
+
+  // always return expr 0.0
+  return Constant::getNullValue(Type::getDoubleTy(ctx.TheContext));
 }
 
 /* vim: set sw=2 sts=2  : */

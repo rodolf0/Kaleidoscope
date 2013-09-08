@@ -17,6 +17,7 @@ static PrototypeAST *ProtoError(const char *error) {
 
 static ExprAST *ParseExpression(Lexer &lexer);
 
+// ifexpr ::= 'if' expression 'then' expression ('else' expression)?
 static ExprAST *ParseIfExpr(Lexer &lexer) {
   lexer.Next(); // eat 'if'
   ExprAST *Cond = ParseExpression(lexer);
@@ -39,7 +40,41 @@ static ExprAST *ParseIfExpr(Lexer &lexer) {
   return new IfExprAST(Cond, Then, Else);
 }
 
-// primary ::= identifierexpr | numberexpr | parenexpr | '-' primary | ifexpr
+// forexpr ::= 'for' id '=' expr ',' expr (',' expr)? 'in' expression
+static ExprAST *ParseForExpr(Lexer &lexer) {
+  lexer.Next(); // eat 'for'
+  if (lexer.Current().lex_comp != Token::tokId)
+    return ExprError("Expected identifier in for-expression");
+  string LoopId = lexer.Current().lexem;
+  if (lexer.Next().lex_comp != Token::tokAssign)
+    return ExprError("Expected '=' after Id in for-expression");
+  lexer.Next(); // eat '='
+  ExprAST *Start = ParseExpression(lexer);
+  if (Start == NULL)
+    return NULL;
+  if (lexer.Current().lex_comp != Token::tokComma)
+    return ExprError("Expected ',' after for start expression");
+  lexer.Next(); // eat ','
+  ExprAST *End = ParseExpression(lexer);
+  if (Start == NULL)
+    return NULL;
+  ExprAST *Step = NULL;
+  if (lexer.Current().lex_comp == Token::tokComma) {
+    lexer.Next(); // eat ','
+    Step = ParseExpression(lexer);
+    if (Step == NULL)
+      return NULL;
+  }
+  if (lexer.Current().lex_comp != Token::tokIn)
+    return ExprError("Expected 'in' after for end/step expression");
+  lexer.Next(); // eat 'in'
+  ExprAST *Body = ParseExpression(lexer);
+  if (Body == NULL)
+    return NULL;
+  return new ForExprAST(LoopId, Start, End, Step, Body);
+}
+
+// primary ::= identifierexpr | numberexpr | parenexpr | '-' primary | ifexpr | forexpr
 static ExprAST *ParsePrimary(Lexer &lexer) {
   switch (lexer.Current().lex_comp) {
   // numberexpr
@@ -99,6 +134,8 @@ static ExprAST *ParsePrimary(Lexer &lexer) {
 
   // ifexpr
   case Token::tokIf: { return ParseIfExpr(lexer); }
+  // forexpr
+  case Token::tokFor: { return ParseForExpr(lexer); }
 
   default:
     return ExprError("Unknown token. Expected expression");

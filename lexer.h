@@ -18,6 +18,8 @@ public:
     tokIf = -6,
     tokThen = -7,
     tokElse = -8,
+    tokFor = -9,
+    tokIn = -10,
     // explicitly enumerate some used by parser
     tokSemicolon = ';',
     tokOParen = '(',
@@ -28,6 +30,7 @@ public:
     tokMinus = '-',
     tokMultiply = '*',
     tokDivide = '/',
+    tokAssign = '=',
   } lexic_component;
 
   std::string lexem;

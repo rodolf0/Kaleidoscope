@@ -73,6 +73,10 @@ Token Lexer::next() {
       return Token(lexem, Token::tokThen);
     if (lexem == "else")
       return Token(lexem, Token::tokElse);
+    if (lexem == "for")
+      return Token(lexem, Token::tokFor);
+    if (lexem == "in")
+      return Token(lexem, Token::tokIn);
     return Token(lexem, Token::tokId);
   }
 

@@ -25,7 +25,7 @@ public:
 
   typedef double (*fptr)();
 
-  Kaleidoscope();              // TODO: free resources
+  Kaleidoscope();           // TODO: free resources
   fptr Parse(Lexer &lexer); // returns a func-pointer
 };
 
@@ -105,17 +105,25 @@ public:
 
 // Conditional expressions
 class IfExprAST : public ExprAST {
-  ExprAST *Cond;
-  ExprAST *Then;
-  ExprAST *Else;
+  ExprAST *Cond, *Then, *Else;
 
 public:
   IfExprAST(ExprAST *cond, ExprAST *then, ExprAST *_else);
   virtual llvm::Value *Codegen(Kaleidoscope &ctx);
 };
 
+class ForExprAST : public ExprAST {
+  std::string VarName;
+  ExprAST *Start, *End, *Step, *Body;
+
+public:
+  ForExprAST(const std::string &varname, ExprAST *start, ExprAST *end,
+             ExprAST *step, ExprAST *body);
+  virtual llvm::Value *Codegen(Kaleidoscope &ctx);
+};
+
 // Parse a top-level, return <success, function ptr if aplicable>
-std::pair<bool, llvm::Function*> ParseNext(Lexer &lexer, Kaleidoscope &ctx);
+std::pair<bool, llvm::Function *> ParseNext(Lexer &lexer, Kaleidoscope &ctx);
 
 #endif // _AST_H_
 
