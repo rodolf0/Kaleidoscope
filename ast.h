@@ -23,8 +23,8 @@ public:
   llvm::ExecutionEngine *TheEE;
   std::map<std::string, llvm::Value *> NamedValues;
 
+public:
   typedef double (*fptr)();
-
   Kaleidoscope();           // TODO: free resources
   fptr Parse(Lexer &lexer); // returns a func-pointer
 };
@@ -55,21 +55,21 @@ public:
 
 // Expressions for a unary operator
 class UnaryExprAST : public ExprAST {
-  Token::lexic_component Op;
+  Token Op;
   ExprAST *Expr;
 
 public:
-  UnaryExprAST(Token::lexic_component op, ExprAST *expr);
+  UnaryExprAST(const Token &op, ExprAST *expr);
   virtual llvm::Value *Codegen(Kaleidoscope &ctx);
 };
 
 // Expressions for a binary operator
 class BinaryExprAST : public ExprAST {
-  Token::lexic_component Op;
+  Token Op;
   ExprAST *LHS, *RHS;
 
 public:
-  BinaryExprAST(Token::lexic_component op, ExprAST *lhs, ExprAST *rhs);
+  BinaryExprAST(const Token &op, ExprAST *lhs, ExprAST *rhs);
   virtual llvm::Value *Codegen(Kaleidoscope &ctx);
 };
 
@@ -87,9 +87,13 @@ public:
 class PrototypeAST {
   std::string Name;
   std::vector<std::string> Args;
+  Token Op;
+  std::pair<int, int> opPrecAssoc;
 
 public:
-  PrototypeAST(const std::string &name, const std::vector<std::string> &args);
+  PrototypeAST(const std::string &name, const std::vector<std::string> &args,
+               const Token &op = Token(),
+               std::pair<int, int> opprecassoc = std::make_pair(30, -1));
   virtual llvm::Function *Codegen(Kaleidoscope &ctx);
 };
 

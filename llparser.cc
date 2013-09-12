@@ -13,9 +13,32 @@ static PrototypeAST *ProtoError(const char *error) {
   return NULL;
 }
 
+// Op-Token => <precedence, associativity (-1 left, 1 right)>
+map<Token, pair<int, int> > OperatorPrecedenceAssoc;
+int OpPrec(const Token &op) {
+  if (OperatorPrecedenceAssoc.find(op) == OperatorPrecedenceAssoc.end())
+    return -1;
+  return OperatorPrecedenceAssoc[op].first;
+}
+int OpAssoc(const Token &op) {
+  if (OperatorPrecedenceAssoc.find(op) == OperatorPrecedenceAssoc.end())
+    return -1;
+  return OperatorPrecedenceAssoc[op].second;
+}
+
+bool checkValidOp(const string &lexem) {
+  const string valid[] = { "!", "@", ":", "#", "$", "%", "^", "&", "|", ".",
+                           "?" };
+  for (unsigned i = 0; i < sizeof(valid) / sizeof(valid[0]); ++i)
+    if (lexem == valid[i])
+      return true;
+  return false;
+}
+
 // Parser functions policy: eat all tokens corresponding to the production
 
 static ExprAST *ParseExpression(Lexer &lexer);
+static ExprAST *ParsePrimary(Lexer &lexer);
 
 // ifexpr ::= 'if' expression 'then' expression ('else' expression)?
 static ExprAST *ParseIfExpr(Lexer &lexer) {
@@ -74,7 +97,21 @@ static ExprAST *ParseForExpr(Lexer &lexer) {
   return new ForExprAST(LoopId, Start, End, Step, Body);
 }
 
-// primary ::= identifierexpr | numberexpr | parenexpr | '-' primary | ifexpr | forexpr
+// unary ::= primary | '!' unary
+static ExprAST *ParseUnary(Lexer &lexer) {
+  if (!checkValidOp(lexer.Current().lexem))
+    return ParsePrimary(lexer);
+  // it's a unary op
+  Token Op = lexer.Current();
+  lexer.Next(); // eat op
+  if (ExprAST *operand = ParseUnary(lexer))
+    return new UnaryExprAST(Op, operand);
+  return NULL;
+}
+
+// primary ::= idexpr | numexpr | parenexpr | '-' primary | ifexpr | forexpr
+// NOTE because of the way we implement op-precedence grammar unary operators
+// have greater precedence than binary ones
 static ExprAST *ParsePrimary(Lexer &lexer) {
   switch (lexer.Current().lex_comp) {
   // numberexpr
@@ -94,16 +131,6 @@ static ExprAST *ParsePrimary(Lexer &lexer) {
       return ExprError("Expected ')'");
     lexer.Next(); // eat ')'
     return expr;
-  }
-
-  // '-' primary
-  case Token::tokMinus: {
-    Token Op = lexer.Current();
-    lexer.Next(); // eat '-'
-    ExprAST *expr = ParsePrimary(lexer);
-    if (expr == NULL)
-      return NULL;
-    return new UnaryExprAST(Op.lex_comp, expr);
   }
 
   // identifierexpr
@@ -132,6 +159,16 @@ static ExprAST *ParsePrimary(Lexer &lexer) {
     return new CallExprAST(IdName, Args);
   }
 
+  // '-' primary
+  case Token::tokMinus: {
+    Token Op = lexer.Current();
+    lexer.Next(); // eat '-'
+    ExprAST *expr = ParsePrimary(lexer);
+    if (expr == NULL)
+      return NULL;
+    return new UnaryExprAST(Op, expr);
+  }
+
   // ifexpr
   case Token::tokIf: { return ParseIfExpr(lexer); }
   // forexpr
@@ -142,33 +179,10 @@ static ExprAST *ParsePrimary(Lexer &lexer) {
   }
 }
 
-static int TokenPrecedence(const Token &token) {
-  switch (token.lex_comp) {
-  case Token::tokLT:
-    return 10;
-  case Token::tokMinus:
-  case Token::tokPlus:
-    return 20;
-  case Token::tokMultiply:
-  case Token::tokDivide:
-    return 40;
-  default:
-    return -1;
-  }
-}
-
-// Operator associativity -1:left associative, 1:right
-static int TokenAssoc(const Token &token) {
-  switch (token.lex_comp) {
-  default:
-    return -1;
-  }
-}
-
-// bioprhs ::= ('+' primary)*
+// bioprhs ::= ('+' unary)*
 static ExprAST *ParseBinOpRHS(Lexer &lexer, int ExprPrec, ExprAST *LHS) {
   while (true) {
-    int TokenPrec = TokenPrecedence(lexer.Current());
+    int TokenPrec = OpPrec(lexer.Current());
     // check that binop binds as tightly as the current op, else we're done
     // if no binop is next then the -1 precedence will bail us out
     if (TokenPrec < ExprPrec)
@@ -176,40 +190,81 @@ static ExprAST *ParseBinOpRHS(Lexer &lexer, int ExprPrec, ExprAST *LHS) {
     // We now know this is a binary operator
     Token BinOp = lexer.Current();
     lexer.Next(); // eat binop and parse primary
-    ExprAST *RHS = ParsePrimary(lexer);
+    ExprAST *RHS = ParseUnary(lexer);
     if (RHS == NULL)
       return NULL;
     // if BinOp binds less tightly with RHS than the next op (after RHS),
     // let that next operator take RHS as its LHS (OR if BinOp is right assoc)
-    int NextPrec = TokenPrecedence(lexer.Current());
+    int NextPrec = OpPrec(lexer.Current());
     if (TokenPrec < NextPrec ||
-        (TokenPrec == NextPrec && TokenAssoc(BinOp) == 1)) {
+        (TokenPrec == NextPrec && OpAssoc(BinOp) == 1)) {
       RHS = ParseBinOpRHS(lexer, NextPrec, RHS);
       if (RHS == NULL)
         return NULL;
     }
     // Merge LHS/RHS
-    LHS = new BinaryExprAST(BinOp.lex_comp, LHS, RHS);
+    LHS = new BinaryExprAST(BinOp, LHS, RHS);
   }
 }
 
-// expression ::= primary binoprhs
+// expression ::= unary binoprhs
 static ExprAST *ParseExpression(Lexer &lexer) {
-  ExprAST *LHS = ParsePrimary(lexer);
+  ExprAST *LHS = ParseUnary(lexer);
   if (LHS == NULL)
     return NULL;
   return ParseBinOpRHS(lexer, 0, LHS);
 }
 
 // prototype ::= id '(' id* ')'
-// eg: foo(x y z)  # note there are no commas separating argnames
+//           ::= 'binary' id num (left|right)? '(' id id ')'
+//           ::= 'unary' id '(' id ')' // no precedence for unary ops...
 static PrototypeAST *ParseFuncProto(Lexer &lexer) {
-  // Get the function name
-  if (lexer.Current().lex_comp != Token::tokId)
-    return ProtoError("Expected function name in prototype");
-  string FnName = lexer.Current().lexem;
+  string FnName = "";
+  Token Op;
+  unsigned BinPrec = 30; // default precedence
+  int Assoc = -1;
+  switch (lexer.Current().lex_comp) {
+  default:
+    return ProtoError(
+        "Expected function name or 'binary' or 'unary' in prototype");
+  case Token::tokId:
+    FnName = lexer.Current().lexem;
+    lexer.Next(); // eat id
+    break;
+
+  case Token::tokBinary:
+    FnName = "binary";
+    if (!checkValidOp(lexer.Next().lexem))
+      return ProtoError("Expected binary operator");
+    Op = lexer.Current();
+    if (lexer.Next().lex_comp != Token::tokNumber)
+      return ProtoError("Expected binary op precedence");
+    BinPrec = (unsigned) stoi(lexer.Current().lexem);
+    if (BinPrec < 1 || BinPrec > 100)
+      return ProtoError("Expected precedence between 1 and 100");
+    // parse binary operator associativity
+    if (lexer.Next().lex_comp == Token::tokId) {
+      if (lexer.Current().lexem == "left")
+        Assoc = 1;
+      else if (lexer.Current().lexem == "right")
+        Assoc = -1;
+      else
+        return ProtoError("Expected 'left' or 'right' associativity");
+      lexer.Next(); // eat 'left'|'right'
+    }
+    break;
+
+  case Token::tokUnary:
+    FnName = "unary";
+    if (!checkValidOp(lexer.Next().lexem))
+      return ProtoError("Expected unary operator");
+    Op = lexer.Current();
+    lexer.Next(); // eat op
+    break;
+  }
+
   // Get the parameter list (eating the identifier)
-  if (lexer.Next().lex_comp != Token::tokOParen)
+  if (lexer.Current().lex_comp != Token::tokOParen)
     return ProtoError("Expected '(' in prototype");
   // Get the list of argument names (eating the initial '(')
   vector<string> ArgNames;
@@ -218,7 +273,12 @@ static PrototypeAST *ParseFuncProto(Lexer &lexer) {
   if (lexer.Current().lex_comp != Token::tokCParen)
     return ProtoError("Expected ')' in prototype");
   lexer.Next(); // eat ')'
-  return new PrototypeAST(FnName, ArgNames);
+
+  if ((FnName == "binary" && ArgNames.size() != 2) ||
+      (FnName == "unary" && ArgNames.size() != 1))
+    return ProtoError("Invalid number of operands for operator");
+
+  return new PrototypeAST(FnName, ArgNames, Op, make_pair(BinPrec, Assoc));
 }
 
 // definition ::= 'def' prototype expression

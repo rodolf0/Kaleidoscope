@@ -20,6 +20,8 @@ public:
     tokElse = -8,
     tokFor = -9,
     tokIn = -10,
+    tokBinary = -11,
+    tokUnary = -12,
     // explicitly enumerate some used by parser
     tokSemicolon = ';',
     tokOParen = '(',
@@ -33,11 +35,13 @@ public:
     tokAssign = '=',
   } lexic_component;
 
-  std::string lexem;
   lexic_component lex_comp;
+  std::string lexem;
 
-  Token();
-  Token(const std::string &lexem, lexic_component lex_comp);
+  Token(); // Null value is lex_comp = 0, lexem = ""
+  Token(lexic_component lex_comp, const std::string &lexem);
+
+  bool operator<(const Token &o) const;
 };
 
 class Lexer {

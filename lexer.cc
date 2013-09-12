@@ -2,12 +2,13 @@
 
 using namespace std;
 
-Token::Token() {}
-Token::Token(const string &lexem, lexic_component lex_comp)
-    : lexem(lexem), lex_comp(lex_comp) {}
+Token::Token() : lex_comp(lexic_component(0)), lexem("") {}
+Token::Token(lexic_component lex_comp, const string &lexem)
+    : lex_comp(lex_comp), lexem(lexem) {}
+bool Token::operator<(const Token &o) const { return lex_comp < o.lex_comp; }
 
 Lexer::Lexer(istream &input)
-    : input(input), current(Token("", Token::tokEOF)) {}
+    : input(input), current(Token(Token::tokEOF, "")) {}
 const Token &Lexer::Current() { return current; }
 
 const Token &Lexer::Next() {
@@ -23,7 +24,7 @@ Token Lexer::next() {
     last = input.get();
 
   if (input.eof())
-    return Token("", Token::tokEOF);
+    return Token(Token::tokEOF, "");
 
   // tokenize numbers
   if (isdigit(last)) {
@@ -34,7 +35,7 @@ Token Lexer::next() {
 
     if (last != '.') {
       input.putback(last);
-      return Token(lexem, Token::tokNumber);
+      return Token(Token::tokNumber, lexem);
     }
 
     // get decimal separator
@@ -42,7 +43,7 @@ Token Lexer::next() {
     last = input.get();
     if (!isdigit(last)) {
       input.putback(last);
-      return Token(lexem, Token::tokNumber);
+      return Token(Token::tokNumber, lexem);
     }
 
     // get decimal part
@@ -52,7 +53,7 @@ Token Lexer::next() {
     } while (isdigit(last));
     input.putback(last);
 
-    return Token(lexem, Token::tokNumber);
+    return Token(Token::tokNumber, lexem);
   }
 
   // tokenize commands/identifiers
@@ -64,24 +65,28 @@ Token Lexer::next() {
     input.putback(last);
 
     if (lexem == "def")
-      return Token(lexem, Token::tokDef);
+      return Token(Token::tokDef, lexem);
     if (lexem == "extern")
-      return Token(lexem, Token::tokExtern);
+      return Token(Token::tokExtern, lexem);
     if (lexem == "if")
-      return Token(lexem, Token::tokIf);
+      return Token(Token::tokIf, lexem);
     if (lexem == "then")
-      return Token(lexem, Token::tokThen);
+      return Token(Token::tokThen, lexem);
     if (lexem == "else")
-      return Token(lexem, Token::tokElse);
+      return Token(Token::tokElse, lexem);
     if (lexem == "for")
-      return Token(lexem, Token::tokFor);
+      return Token(Token::tokFor, lexem);
     if (lexem == "in")
-      return Token(lexem, Token::tokIn);
-    return Token(lexem, Token::tokId);
+      return Token(Token::tokIn, lexem);
+    if (lexem == "binary")
+      return Token(Token::tokBinary, lexem);
+    if (lexem == "unary")
+      return Token(Token::tokUnary, lexem);
+    return Token(Token::tokId, lexem);
   }
 
   // don't know what this is
-  return Token(string(1, last), static_cast<Token::lexic_component>(last));
+  return Token(Token::lexic_component(last), string(1, last));
 }
 
 /* vim: set sw=2 sts=2 : */

@@ -20,6 +20,9 @@ static Function *FunctionError(const char *error) {
   return NULL;
 }
 
+// Op-Token => <precedence, associativity (-1 left, 1 right)> (llparser.cc)
+extern map<Token, pair<int, int> > OperatorPrecedenceAssoc;
+
 Kaleidoscope::Kaleidoscope()
     : TheContext(getGlobalContext()), Builder(TheContext) {
   InitializeNativeTarget();
@@ -35,6 +38,13 @@ Kaleidoscope::Kaleidoscope()
   TheFPM->add(createGVNPass());
   TheFPM->add(createCFGSimplificationPass());
   TheFPM->doInitialization();
+
+  // Initialize operator precedence
+  OperatorPrecedenceAssoc[Token(Token::tokLT, "<")] = make_pair(10, -1);
+  OperatorPrecedenceAssoc[Token(Token::tokMinus, "-")] = make_pair(20, -1);
+  OperatorPrecedenceAssoc[Token(Token::tokPlus, "+")] = make_pair(20, -1);
+  OperatorPrecedenceAssoc[Token(Token::tokMultiply, "*")] = make_pair(40, -1);
+  OperatorPrecedenceAssoc[Token(Token::tokDivide, "/")] = make_pair(40, -1);
 }
 
 Kaleidoscope::fptr Kaleidoscope::Parse(Lexer &lexer) {
@@ -63,21 +73,25 @@ Value *VariableExprAST::Codegen(Kaleidoscope &ctx) {
 }
 
 // ----------------------------------------------------------------------
-UnaryExprAST::UnaryExprAST(Token::lexic_component op, ExprAST *expr)
+UnaryExprAST::UnaryExprAST(const Token &op, ExprAST *expr)
     : Op(op), Expr(expr) {}
 
 Value *UnaryExprAST::Codegen(Kaleidoscope &ctx) {
   Value *V = Expr->Codegen(ctx);
   if (V == NULL)
     return NULL;
-  if (Op != Token::tokMinus)
-    return ValueError("Unknown unary operator");
-  return ctx.Builder.CreateFNeg(V, "negtmp");
+  // check for our unary -
+  if (Op.lex_comp == Token::tokMinus)
+    return ctx.Builder.CreateFNeg(V, "negtmp");
+  // check for a user defined unary op
+  Function *F = ctx.TheModule->getFunction("unary" + Op.lexem);
+  if (F == NULL)
+    return ValueError("Invalid unary operator");
+  return ctx.Builder.CreateCall(F, V, "uniop");
 }
 
 // ----------------------------------------------------------------------
-BinaryExprAST::BinaryExprAST(Token::lexic_component op, ExprAST *lhs,
-                             ExprAST *rhs)
+BinaryExprAST::BinaryExprAST(const Token &op, ExprAST *lhs, ExprAST *rhs)
     : Op(op), LHS(lhs), RHS(rhs) {}
 
 Value *BinaryExprAST::Codegen(Kaleidoscope &ctx) {
@@ -86,7 +100,7 @@ Value *BinaryExprAST::Codegen(Kaleidoscope &ctx) {
   if (L == NULL || R == NULL)
     return NULL;
 
-  switch (Op) {
+  switch (Op.lex_comp) {
   case Token::tokLT:
     L = ctx.Builder.CreateFCmpULT(L, R, "cmptmp");
     // convert bool to double
@@ -101,8 +115,14 @@ Value *BinaryExprAST::Codegen(Kaleidoscope &ctx) {
   case Token::tokDivide:
     return ctx.Builder.CreateFDiv(L, R, "divtmp");
   default:
-    return ValueError("Invalid binary operator");
+    break; // must be a user defined op
   }
+  // check for user defined operators
+  Function *F = ctx.TheModule->getFunction("binary" + Op.lexem);
+  if (F == NULL)
+    return ValueError("Invalid binary operator");
+  Value *Ops[2] = { L, R };
+  return ctx.Builder.CreateCall(F, Ops, "binop");
 }
 
 // ----------------------------------------------------------------------
@@ -129,8 +149,9 @@ Value *CallExprAST::Codegen(Kaleidoscope &ctx) {
 }
 
 // ----------------------------------------------------------------------
-PrototypeAST::PrototypeAST(const string &name, const vector<string> &args)
-    : Name(name), Args(args) {}
+PrototypeAST::PrototypeAST(const string &name, const vector<string> &args,
+                           const Token &op, pair<int, int> opprecassoc)
+    : Name(name), Args(args), Op(op), opPrecAssoc(opprecassoc) {}
 
 // http://llvm.org/releases/3.3/docs/tutorial/LangImpl3.html#id4
 Function *PrototypeAST::Codegen(Kaleidoscope &ctx) {
@@ -141,7 +162,11 @@ Function *PrototypeAST::Codegen(Kaleidoscope &ctx) {
     FunctionType *FT = // returns a double, takes n-doubles, is not vararg
         FunctionType::get(Type::getDoubleTy(ctx.TheContext), DblArgs, false);
     // register our function in TheModule with name Name
-    F = Function::Create(FT, Function::ExternalLinkage, Name, ctx.TheModule);
+    if (Name == "unary" || Name == "binary")
+      F = Function::Create(FT, Function::ExternalLinkage, Name + Op.lexem,
+                           ctx.TheModule);
+    else
+      F = Function::Create(FT, Function::ExternalLinkage, Name, ctx.TheModule);
   }
 
   if (!F->empty()) // check the function es a forward decl if it exists
@@ -157,6 +182,11 @@ Function *PrototypeAST::Codegen(Kaleidoscope &ctx) {
     // add arguments to variable sym-table
     ctx.NamedValues[Args[idx]] = AI;
   }
+
+  // check if prototype defines an operator => install precedence/associativity
+  if (Name == "unary" || Name == "binary")
+    OperatorPrecedenceAssoc[Op] = opPrecAssoc;
+
   return F;
 }
 
