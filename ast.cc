@@ -20,6 +20,13 @@ static Function *FunctionError(const char *error) {
   return NULL;
 }
 
+static AllocaInst *CreateEntryBlockAlloca(Kaleidoscope &ctx,
+                                          const string &Var) {
+  BasicBlock *EB = &ctx.Builder.GetInsertBlock()->getParent()->getEntryBlock();
+  IRBuilder<> B(EB, EB->begin());
+  return B.CreateAlloca(Type::getDoubleTy(ctx.TheContext), 0, Var.c_str());
+}
+
 // Op-Token => <precedence, associativity (-1 left, 1 right)> (llparser.cc)
 extern map<Token, pair<int, int> > OperatorPrecedenceAssoc;
 
@@ -33,6 +40,7 @@ Kaleidoscope::Kaleidoscope()
   TheFPM = new FunctionPassManager(TheModule);
   TheFPM->add(new DataLayout(*TheEE->getDataLayout()));
   TheFPM->add(createBasicAliasAnalysisPass());
+  TheFPM->add(createPromoteMemoryToRegisterPass());
   TheFPM->add(createInstructionCombiningPass());
   TheFPM->add(createReassociatePass());
   TheFPM->add(createGVNPass());
@@ -68,8 +76,11 @@ Value *NumberExprAST::Codegen(Kaleidoscope &ctx) {
 VariableExprAST::VariableExprAST(const string &name) : Name(name) {}
 
 Value *VariableExprAST::Codegen(Kaleidoscope &ctx) {
-  Value *v = ctx.NamedValues[Name];
-  return v ? v : ValueError("Unknown variable name");
+  Value *V = ctx.NamedValues[Name];
+  if (V == NULL)
+    return ValueError("Unknown variable name");
+  // load the value
+  return ctx.Builder.CreateLoad(V, Name.c_str());
 }
 
 // ----------------------------------------------------------------------
@@ -153,6 +164,19 @@ PrototypeAST::PrototypeAST(const string &name, const vector<string> &args,
                            const Token &op, pair<int, int> opprecassoc)
     : Name(name), Args(args), Op(op), opPrecAssoc(opprecassoc) {}
 
+// create allocas for all function arguments
+void PrototypeAST::CreateArgumentAllocas(Kaleidoscope &ctx, Function *F) {
+  Function::arg_iterator AI = F->arg_begin();
+  for (unsigned idx = 0; idx != Args.size(); ++idx, ++AI) {
+    // create an alloca for this variable
+    AllocaInst *A = CreateEntryBlockAlloca(ctx, Args[idx]);
+    // store the initial value into the alloca
+    ctx.Builder.CreateStore(AI, A);
+    // add args to variable-symbol-table
+    ctx.NamedValues[Args[idx]] = A;
+  }
+}
+
 // http://llvm.org/releases/3.3/docs/tutorial/LangImpl3.html#id4
 Function *PrototypeAST::Codegen(Kaleidoscope &ctx) {
   Function *F = NULL;
@@ -175,12 +199,9 @@ Function *PrototypeAST::Codegen(Kaleidoscope &ctx) {
     return FunctionError("Redefinition of function with wrong # of args");
 
   // set names for all arguments
-  unsigned idx = 0;
-  for (Function::arg_iterator AI = F->arg_begin(); idx != Args.size();
-       ++AI, ++idx) {
+  Function::arg_iterator AI = F->arg_begin();
+  for (unsigned idx = 0; idx != Args.size(); ++AI, ++idx) {
     AI->setName(Args[idx]);
-    // add arguments to variable sym-table
-    ctx.NamedValues[Args[idx]] = AI;
   }
 
   // check if prototype defines an operator => install precedence/associativity
@@ -203,6 +224,9 @@ Function *FunctionAST::Codegen(Kaleidoscope &ctx) {
   // Create a new basic block to start insertion into.
   BasicBlock *BB = BasicBlock::Create(ctx.TheContext, "entry", F);
   ctx.Builder.SetInsertPoint(BB);
+
+  // add arguments to the symbol-table
+  Proto->CreateArgumentAllocas(ctx, F);
 
   if (Value *RetVal = Body->Codegen(ctx)) {
     // finish off the function
@@ -294,30 +318,49 @@ Value *IfExprAST::Codegen(Kaleidoscope &ctx) {
 }
 
 // ----------------------------------------------------------------------
+// Output this as:
+//   var = alloca double
+//   ...
+//   start = startexpr
+//   store start -> var
+//   goto loop
+// loop:
+//   ...
+//   bodyexpr
+//   ...
+// loopend:
+//   step = stepexpr
+//   endcond = endexpr
+//
+//   curvar = load var
+//   nextvar = curvar + step
+//   store nextvar -> var
+//   br endcond, loop, endloop
+// outloop:
+
 ForExprAST::ForExprAST(const std::string &varname, ExprAST *start, ExprAST *end,
                        ExprAST *step, ExprAST *body)
     : VarName(varname), Start(start), End(end), Step(step), Body(body) {}
 
 Value *ForExprAST::Codegen(Kaleidoscope &ctx) {
+  // Create the Alloca at the entry of the function and set it's start value
+  AllocaInst *A = CreateEntryBlockAlloca(ctx, VarName);
   Value *StartV = Start->Codegen(ctx);
   if (StartV == NULL)
     return NULL;
+  ctx.Builder.CreateStore(StartV, A);
 
+  // get a handle on the function we're  inserting code into
   Function *F = ctx.Builder.GetInsertBlock()->getParent();
-  BasicBlock *PreBB = ctx.Builder.GetInsertBlock();
   BasicBlock *LoopBB = BasicBlock::Create(ctx.TheContext, "loop", F);
-  // insert explicit fall-through to loop body
   ctx.Builder.CreateBr(LoopBB);
 
   ctx.Builder.SetInsertPoint(LoopBB);
-  PHINode *Var = ctx.Builder
-      .CreatePHI(Type::getDoubleTy(ctx.TheContext), 2, VarName.c_str());
-  // set the variable to it's initial value if coming in first time
-  Var->addIncoming(StartV, PreBB);
 
   // if the loop scope shadows a variable, keep it's old value
-  Value *VarShadow = ctx.NamedValues[VarName];
-  ctx.NamedValues[VarName] = Var;
+  AllocaInst *OldVal = ctx.NamedValues[VarName];
+  ctx.NamedValues[VarName] = A;
+
   // generate Body now that the loop variable is in scope
   Value *BodyV = Body->Codegen(ctx);
   if (BodyV == NULL)
@@ -331,29 +374,31 @@ Value *ForExprAST::Codegen(Kaleidoscope &ctx) {
   } else {
     StepV = ConstantFP::get(ctx.TheContext, APFloat(1.0));
   }
-  // increment the loop variable with the step
-  Value *NextVal = ctx.Builder.CreateFAdd(Var, StepV, "nextvar");
+
   // compute end condition
   Value *EndV = End->Codegen(ctx);
   if (End == NULL)
     return NULL;
+
+  // reload, increment, and restore the alloca (in case the body mutates the
+  // variable)
+  Value *CurVal = ctx.Builder.CreateLoad(A, VarName.c_str());
+  Value *NextVal = ctx.Builder.CreateFAdd(CurVal, StepV, "nextvar");
+  ctx.Builder.CreateStore(NextVal, A);
+
   // convert condition to bool by comparing to 0.0
   EndV = ctx.Builder.CreateFCmpONE(
       EndV, ConstantFP::get(ctx.TheContext, APFloat(0.0)), "loopcond");
 
-  // get a handle on wherever we're inserting, this is the loop's end
-  BasicBlock *LoopEndBB = ctx.Builder.GetInsertBlock();
   // insert the block coming after the loop
   BasicBlock *AfterBB = BasicBlock::Create(ctx.TheContext, "afterloop", F);
   ctx.Builder.CreateCondBr(EndV, LoopBB, AfterBB); // condition to keep looping
   // continue writing after the loop
   ctx.Builder.SetInsertPoint(AfterBB);
-  // set variable to NextVal if in-coming from Loop's end
-  Var->addIncoming(NextVal, LoopEndBB);
 
   // restore possibly shadowed var
-  if (VarShadow)
-    ctx.NamedValues[VarName] = VarShadow;
+  if (OldVal)
+    ctx.NamedValues[VarName] = OldVal;
   else
     ctx.NamedValues.erase(VarName);
 

@@ -21,7 +21,7 @@ public:
   llvm::Module *TheModule;
   llvm::FunctionPassManager *TheFPM;
   llvm::ExecutionEngine *TheEE;
-  std::map<std::string, llvm::Value *> NamedValues;
+  std::map<std::string, llvm::AllocaInst *> NamedValues;
 
 public:
   typedef double (*fptr)();
@@ -94,6 +94,8 @@ public:
   PrototypeAST(const std::string &name, const std::vector<std::string> &args,
                const Token &op = Token(),
                std::pair<int, int> opprecassoc = std::make_pair(30, -1));
+
+  void CreateArgumentAllocas(Kaleidoscope &ctx, llvm::Function *);
   virtual llvm::Function *Codegen(Kaleidoscope &ctx);
 };
 
